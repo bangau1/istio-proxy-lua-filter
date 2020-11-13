@@ -1,0 +1,106 @@
+# Default values for app.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+labels:
+  version: stable
+  environment: dev
+
+containerPort: 80
+# Protocol selection for istio. Reference: https://istio.io/latest/docs/ops/configuration/traffic-management/protocol-selection/
+containerProtocol: http
+
+# Define Environment variables for the service
+extraEnvs: {}
+envFromSecret: ""
+
+# livenessProbe:
+#   httpGet:
+#     path: /
+#     port: http
+
+# readinessProbe:
+#   httpGet:
+#     path: /
+#     port: http
+
+replicaCount: 1
+
+service:
+  enabled: false
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http-{{ include "app.fullname" . }}
+
+files: {}
+  # config.json: |-
+  #   {"name": "agung pratama", "email": "agung@kargo.tech"}
+  # config.yaml: |-
+  #   name: "Agung Pratama"
+  #   email: "agung@kargo.tech"
+
+image:
+  repository: solsson/http-echo
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+  args: []
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# this annotation is needed to inject lua libs.
+# see more about istio related annotations here: https://istio.io/latest/docs/reference/config/annotations/
+podAnnotations:
+  sidecar.istio.io/userVolume: '[{"name":"envoy-filter-data", "configMap":{"name":"lua-libs"}}]'
+  sidecar.istio.io/userVolumeMount: '[{"name":"envoy-filter-data", "mountPath":"/etc/lua/lib/"}]'
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
