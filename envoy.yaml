@@ -28,7 +28,7 @@ static_resources:
             typed_config:
               "@type": type.googleapis.com/envoy.config.filter.http.lua.v2.Lua
               inline_code: |
-                JSON = (loadfile "/lib/json.lua")() -- one-time load of the routines
+                JSON = (loadfile "/etc/lua/lib/json.lua")() -- one-time load of the routines
 
                 function envoy_on_response(response_handle)
                   body_size = response_handle:body():length()
