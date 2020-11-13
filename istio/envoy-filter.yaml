@@ -1,0 +1,98 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: profile-inject-filter
+spec:
+  workloadSelector:
+    labels:
+      app: lua-filter
+      environment: dev
+  configPatches:
+    # The first patch adds the lua filter to the listener/http connection manager
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        portNumber: 80
+        filterChain:
+          filter:
+            name: "envoy.http_connection_manager"
+            subFilter:
+              name: "envoy.router"
+    patch:
+      operation: INSERT_BEFORE
+      value: # lua filter specification
+        name: envoy.filters.http.lua
+        typed_config:
+          "@type": "type.googleapis.com/envoy.config.filter.http.lua.v2.Lua"
+          inline_code: |
+            JSON = (loadfile "/etc/lua/lib/json.lua")() -- one-time load of the routines
+
+            function envoy_on_response(response_handle)
+              body_size = response_handle:body():length()
+              response_handle:headers():add("response-body-size", tostring(body_size))
+            end
+
+            function envoy_on_request(request_handle)
+              -- Make an HTTP call to profile_service to inject additional information about the current user's request.
+              local headers, body = request_handle:httpCall(
+                "profile-service-cluster",
+                {
+                  [":method"] = "GET",
+                  [":path"] = "/json",
+                  -- [":path"] = "/status/500",
+                  [":authority"] = "httpbin.org",
+                  ["accept"] = "application/json"
+                },
+                nil,
+                5000,
+                false)
+              -- parse body response from profile_service and inject some data into the http-header to the upstream server.
+              if headers[":status"] == "200" and body ~= nil then
+                request_handle:logInfo("Body: "..body)
+                local jsonObj = JSON.decode(body)
+                request_handle:headers():add("xfilter-author", jsonObj["slideshow"]["author"])
+                request_handle:headers():add("xfilter-slides-number", #jsonObj["slideshow"]["slides"])
+              else
+                -- nothing to inject
+                request_handle:logInfo("Http Status Code from profile-service: ".. headers[":status"])
+                if body ~= nil then
+                  request_handle:logInfo("Body from profile-service: ".. body)
+                else
+                  request_handle:logInfo("Body from profile-service: nil")
+                end
+                
+                -- we can also directly response here
+                -- Response directly and set a header from the HTTP call. No further filter iteration
+                -- occurs.
+                request_handle:respond(
+                  {[":status"] = "403",["profile-service-status"] = headers[":status"]},
+                  "Can't process this request")
+              end
+            end
+  # The second patch adds the cluster that is referenced by the lua code
+  # cds match is omitted as a new cluster is being added
+  - applyTo: CLUSTER
+    match:
+      context: SIDECAR_OUTBOUND
+    patch:
+      operation: ADD
+      value: # cluster specification
+        name: profile-service-cluster
+        connect_timeout: 5s
+        type: STRICT_DNS # static
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: profile-service-cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: httpbin.org
+                    port_value: 443
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.api.v2.auth.UpstreamTlsContext
+            sni: httpbin.org

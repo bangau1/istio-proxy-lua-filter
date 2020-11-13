@@ -27,7 +27,7 @@ envFromSecret: ""
 replicaCount: 1
 
 service:
-  enabled: false
+  enabled: true
   type: ClusterIP
   ports:
   - port: 80
@@ -67,6 +67,7 @@ serviceAccount:
 podAnnotations:
   sidecar.istio.io/userVolume: '[{"name":"envoy-filter-data", "configMap":{"name":"lua-libs"}}]'
   sidecar.istio.io/userVolumeMount: '[{"name":"envoy-filter-data", "mountPath":"/etc/lua/lib/"}]'
+  sidecar.istio.io/logLevel: "info"
 
 podSecurityContext: {}
   # fsGroup: 2000
