@@ -6,3 +6,9 @@ to the [Envoy docs](https://www.envoyproxy.io/docs/envoy/latest/start/sandboxes/
 ## To run it locally
 - make run-local
 - curl https://localhost:8000
+
+## To run it with Istio
+- `kubectl create namespace agung`
+- `kubectl label namespace agung istio-injection=enabled`
+- `make deploy-istio NAMESPACE=agung`
+- curl http://<pod-ip>/ 
