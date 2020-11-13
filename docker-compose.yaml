@@ -1,0 +1,44 @@
+version: "3.7"
+services:
+
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile-proxy
+    volumes:
+      - ./envoy.yaml:/etc/envoy.yaml
+    networks:
+      - envoymesh
+    expose:
+      - "8000"
+      - "8001"
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+
+  web_service:
+    build:
+      context: .
+      dockerfile: Dockerfile-web-service
+    networks:
+      envoymesh:
+        aliases:
+          - web_service
+    expose:
+      - "80"
+    ports:
+      - "8080:80"
+  
+  profile_service:
+    image: kennethreitz/httpbin
+    networks:
+      envoymesh:
+        aliases:
+          - profile_service
+    expose:
+      - "80"
+    ports:
+      - "8081:80"
+
+networks:
+  envoymesh: {}

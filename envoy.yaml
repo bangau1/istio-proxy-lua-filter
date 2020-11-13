@@ -1,0 +1,111 @@
+static_resources:
+  listeners:
+  - name: main
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 8000
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: auto
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains:
+              - "*"
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: web-service-cluster
+          http_filters:
+          - name: envoy.filters.http.lua
+            typed_config:
+              "@type": type.googleapis.com/envoy.config.filter.http.lua.v2.Lua
+              inline_code: |
+                JSON = (loadfile "/lib/json.lua")() -- one-time load of the routines
+
+                function envoy_on_response(response_handle)
+                  body_size = response_handle:body():length()
+                  response_handle:headers():add("response-body-size", tostring(body_size))
+                end
+
+                function envoy_on_request(request_handle)
+                  -- Make an HTTP call to profile_service to inject additional information about the current user's request.
+                  local headers, body = request_handle:httpCall(
+                    "profile-service-cluster",
+                    {
+                      [":method"] = "GET",
+                      -- [":path"] = "/json",
+                      [":path"] = "/status/500",
+                      [":authority"] = "profile-service.com",
+                      [":accept"] = "application/json"
+                    },
+                    nil,
+                    5000,
+                    false)
+                  -- parse body response from profile_service and inject some data into the http-header to the upstream server.
+                  if headers[":status"] == 200 and body ~= nil then
+                    request_handle:logInfo("Body: "..body)
+                    local jsonObj = JSON.decode(body)
+                    request_handle:headers():add("xfilter-author", jsonObj["slideshow"]["author"])
+                    request_handle:headers():add("xfilter-slides-number", #jsonObj["slideshow"]["slides"])
+                  else
+                    -- nothing to inject
+                    request_handle:logInfo("Http Status Code from profile-service: ".. headers[":status"])
+                    if body ~= nil then
+                      request_handle:logInfo("Body from profile-service: ".. body)
+                    else
+                      request_handle:logInfo("Body from profile-service: nil")
+                    end
+                    
+                    -- we can also directly response here
+                    -- Response directly and set a header from the HTTP call. No further filter iteration
+                    -- occurs.
+                    request_handle:respond(
+                      {[":status"] = "403",["profile-service-status"] = headers[":status"]},
+                      "Can't process this request")
+                  end
+
+                end
+          - name: envoy.filters.http.router
+            typed_config: {}
+
+  clusters:
+  - name: web-service-cluster
+    connect_timeout: 0.25s
+    type: strict_dns # static
+    lb_policy: round_robin
+    load_assignment:
+      cluster_name: web-service-cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: web_service
+                port_value: 80
+  - name: profile-service-cluster
+    connect_timeout: 0.25s
+    type: strict_dns # static
+    lb_policy: round_robin
+    load_assignment:
+      cluster_name: profile-service-cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: profile_service
+                port_value: 80
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8001
